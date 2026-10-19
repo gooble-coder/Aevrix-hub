@@ -1,0 +1,13 @@
+
+{
+  "games": {
+    "2753915549": {
+      "name": "Blox Fruits",
+      "file": "games/bloxfruits.lua"
+    },
+    "74102906764176": {
+      "name": "Greedy Growers",
+      "file": "games/greedygrowers.lua"
+    }
+  }
+}
