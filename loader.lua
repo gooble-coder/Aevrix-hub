@@ -1,5 +1,8 @@
 
-
+-- ==========================================
+-- AEVRIX KEY VERIFIER
+-- DYNAMIC GITHUB LOADER + DEBUG
+-- ==========================================
 
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
@@ -8,32 +11,24 @@ local HttpService = game:GetService("HttpService")
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
+-- ==========================================
+-- CONFIGURATION
+-- ==========================================
 
+local GITHUB_ROOT =
+    "https://raw.githubusercontent.com/gooble-coder/Aevrix-hub/main/"
+
+local CONFIG_URL =
+    GITHUB_ROOT .. "games/games.json"
+
+local GITHUB_BASE =
+    GITHUB_ROOT .. "games/"
 
 local WEBSITE =
     "https://aevrix-loader.auth-tracking.workers.dev/"
 
 local VERIFY_URL =
-    "https://aevrix-loader.auth-tracking.workers.dev/v1/verify"
-
-local GITHUB_BASE =
-    "https://raw.githubusercontent.com/gooble-coder/Aevrix-hub/main/games/"
-
-local SUPPORTED_GAMES = {
-    [2753915549] = "Blox Fruits - First Sea",
-    [4442272183] = "Blox Fruits - Second Sea",
-    [7449423635] = "Blox Fruits - Third Sea",
-    [74102906764176] = "Greedy Growers"
-}
-
-local GAME_SCRIPTS = {
-    [2753915549] = "bloxfruits.lua",
-    [4442272183] = "bloxfruits.lua",
-    [7449423635] = "bloxfruits.lua",
-    [74102906764176] = "greedygrowers.lua"
-}
-
-
+    WEBSITE .. "v1/verify"
 
 local GREEN = Color3.fromRGB(118, 255, 3)
 local YELLOW = Color3.fromRGB(255, 230, 0)
@@ -42,14 +37,32 @@ local SURFACE = Color3.fromRGB(19, 27, 18)
 local MUTED = Color3.fromRGB(165, 181, 157)
 local WHITE = Color3.fromRGB(241, 247, 237)
 
+-- ==========================================
+-- DEBUG HELPERS
+-- ==========================================
 
+local function debugLog(...)
+    print("[AEVRIX DEBUG]", ...)
+end
+
+local function debugWarn(...)
+    warn("[AEVRIX DEBUG]", ...)
+end
+
+debugLog("Starting Aevrix...")
+debugLog("Place ID:", game.PlaceId)
+debugLog("Game ID:", game.GameId)
+
+-- ==========================================
+-- HTTP COMPATIBILITY
+-- ==========================================
 
 local function getRequestFunctions()
     local candidates = {}
 
-    local function add(candidate)
-        if type(candidate) == "function" then
-            table.insert(candidates, candidate)
+    local function add(fn)
+        if type(fn) == "function" then
+            table.insert(candidates, fn)
         end
     end
 
@@ -75,81 +88,117 @@ local function getRequestFunctions()
     return candidates
 end
 
+-- ==========================================
+-- DYNAMIC GAME CONFIGURATION
+-- ==========================================
 
+local function loadGameConfig()
+    local url = CONFIG_URL
+        .. "?t=" .. tostring(os.time())
 
-local function verifyWithCloudflare(key)
-    local requestFunctions = getRequestFunctions()
+    debugLog("Downloading game configuration...")
+    debugLog("Config URL:", url)
 
-    if #requestFunctions == 0 then
-        return {
-            valid = false,
-            status = "unsupported_http"
-        }
+    local success, response = pcall(function()
+        return game:HttpGet(url)
+    end)
+
+    if not success then
+        debugWarn("HTTP error:", response)
+        return nil, "Could not download games.json"
     end
 
-    local body = HttpService:JSONEncode({
-        key = key
-    })
+    if type(response) ~= "string"
+        or response == "" then
+        return nil, "Empty configuration response"
+    end
 
-    for _, sendRequest in ipairs(requestFunctions) do
-        local success, response = pcall(function()
-            return sendRequest({
-                Url = VERIFY_URL,
-                Method = "POST",
-                Headers = {
-                    ["Content-Type"] = "application/json",
-                    ["Accept"] = "application/json"
-                },
-                Body = body
-            })
-        end)
+    debugLog("Configuration downloaded")
+    debugLog("Response length:", #response)
 
-        if success and type(response) == "table" then
-            local responseBody =
-                response.Body or response.body
+    local decoded, config = pcall(function()
+        return HttpService:JSONDecode(response)
+    end)
 
-            if type(responseBody) == "string" then
-                local decoded, result = pcall(function()
-                    return HttpService:JSONDecode(
-                        responseBody
-                    )
-                end)
+    if not decoded or type(config) ~= "table" then
+        debugWarn("JSON decoding failed:", config)
+        return nil, "Invalid games.json"
+    end
 
-                if decoded and type(result) == "table" then
-                    return {
-                        valid = result.valid == true,
-                        status = result.status or "error",
-                        keyType = result.type,
-                        expiresAt = result.expires_at
-                    }
-                end
-            end
+    local games = config.games or config
+
+    if type(games) ~= "table" then
+        return nil, "Missing games table"
+    end
+
+    debugLog("Games found in configuration:")
+
+    for id, entry in pairs(games) do
+        if type(entry) == "table" then
+            debugLog(
+                "ID:", tostring(id),
+                "Name:", tostring(entry.name),
+                "Script:", tostring(entry.script)
+            )
         end
     end
 
-    return {
-        valid = false,
-        status = "connection_error"
-    }
+    return games
 end
 
+-- ==========================================
+-- LOAD CONFIGURATION
+-- ==========================================
 
+local SUPPORTED_GAMES, configError =
+    loadGameConfig()
 
-local oldGui =
-    playerGui:FindFirstChild("AevrixKeyVerifier")
-
-if oldGui then
-    oldGui:Destroy()
+if not SUPPORTED_GAMES then
+    debugWarn("Config failed:", configError)
+    return
 end
 
-local gui = Instance.new("ScreenGui")
-gui.Name = "AevrixKeyVerifier"
-gui.ResetOnSpawn = false
-gui.IgnoreGuiInset = true
-gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-gui.Parent = playerGui
+-- ==========================================
+-- GAME DETECTION DEBUG
+-- ==========================================
 
+local currentPlaceId = tostring(game.PlaceId)
 
+debugLog("Current Place ID:", currentPlaceId)
+debugLog("Config type:", type(SUPPORTED_GAMES))
+
+local gameEntry =
+    SUPPORTED_GAMES[currentPlaceId]
+
+debugLog("Game entry type:", type(gameEntry))
+
+if not gameEntry then
+    debugWarn("NO MATCH FOUND!")
+    debugWarn("Requested Place ID:", currentPlaceId)
+
+    for id, entry in pairs(SUPPORTED_GAMES) do
+        debugLog(
+            "Available game:",
+            tostring(id),
+            type(entry) == "table"
+                and tostring(entry.name)
+                or "Invalid entry"
+        )
+    end
+else
+    debugLog("MATCH FOUND!")
+    debugLog("Game:", gameEntry.name)
+    debugLog("Script:", gameEntry.script)
+end
+
+local gameName =
+    type(gameEntry) == "table"
+    and gameEntry.name
+    or nil
+
+-- ==========================================
+-- UI HELPERS
+-- ==========================================
 
 local function rounded(parent, radius)
     local corner = Instance.new("UICorner")
@@ -192,13 +241,32 @@ local function makeButton(parent, name, text, color)
     return button
 end
 
+-- ==========================================
+-- CREATE SCREEN GUI
+-- ==========================================
 
+local oldGui =
+    playerGui:FindFirstChild("AevrixKeyVerifier")
+
+if oldGui then
+    oldGui:Destroy()
+end
+
+local gui = Instance.new("ScreenGui")
+gui.Name = "AevrixKeyVerifier"
+gui.ResetOnSpawn = false
+gui.IgnoreGuiInset = true
+gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+gui.Parent = playerGui
+
+-- ==========================================
+-- NOTIFICATION SYSTEM
+-- ==========================================
 
 local notification = Instance.new("Frame")
 notification.Name = "Notification"
 notification.AnchorPoint = Vector2.new(1, 1)
-notification.Position =
-    UDim2.new(1, 340, 1, -24)
+notification.Position = UDim2.new(1, 340, 1, -24)
 notification.Size = UDim2.fromOffset(310, 94)
 notification.BackgroundColor3 = DARK
 notification.Visible = false
@@ -233,6 +301,7 @@ local function notify(titleText, messageText)
     notificationTitle.Text = titleText
     notificationText.Text = messageText
     notification.Visible = true
+
     notification.Position =
         UDim2.new(1, 340, 1, -24)
 
@@ -271,18 +340,24 @@ local function notify(titleText, messageText)
 end
 
 -- ==========================================
--- GAME DETECTION
+-- CHECK SUPPORTED GAME
 -- ==========================================
 
-local gameName = SUPPORTED_GAMES[game.PlaceId]
-
-if not gameName then
+if type(gameName) ~= "string" then
     notify(
         "Game Not Supported",
-        "Aevrix does not currently support this experience."
+        "Place ID: " .. currentPlaceId
     )
+
+    debugWarn(
+        "Game detection failed for:",
+        currentPlaceId
+    )
+
     return
 end
+
+debugLog("Game detection successful:", gameName)
 
 -- ==========================================
 -- BACKGROUND OVERLAY
@@ -297,7 +372,7 @@ overlay.BorderSizePixel = 0
 overlay.Parent = gui
 
 -- ==========================================
--- VERIFIER WINDOW
+-- MAIN VERIFIER WINDOW
 -- ==========================================
 
 local window = Instance.new("Frame")
@@ -317,10 +392,7 @@ windowScale.Parent = window
 
 TweenService:Create(
     windowScale,
-    TweenInfo.new(
-        0.25,
-        Enum.EasingStyle.Back
-    ),
+    TweenInfo.new(0.25, Enum.EasingStyle.Back),
     {Scale = 1}
 ):Play()
 
@@ -358,8 +430,7 @@ local divider = Instance.new("Frame")
 divider.Position = UDim2.fromOffset(24, 104)
 divider.Size = UDim2.new(1, -48, 0, 1)
 divider.BorderSizePixel = 0
-divider.BackgroundColor3 =
-    Color3.fromRGB(45, 60, 40)
+divider.BackgroundColor3 = Color3.fromRGB(45, 60, 40)
 divider.Parent = window
 
 local inputLabel = label(
@@ -394,11 +465,7 @@ keyBox.ClearTextOnFocus = false
 keyBox.Parent = window
 
 rounded(keyBox, 10)
-stroke(
-    keyBox,
-    Color3.fromRGB(55, 73, 48),
-    0
-)
+stroke(keyBox, Color3.fromRGB(55, 73, 48), 0)
 
 local padding = Instance.new("UIPadding")
 padding.PaddingLeft = UDim.new(0, 13)
@@ -406,36 +473,22 @@ padding.PaddingRight = UDim.new(0, 13)
 padding.Parent = keyBox
 
 -- ==========================================
--- VERIFY BUTTON
+-- BUTTONS
 -- ==========================================
 
 local verifyButton = makeButton(
-    window,
-    "VerifyButton",
-    "VERIFY KEY",
-    GREEN
+    window, "VerifyButton", "VERIFY KEY", GREEN
 )
 
-verifyButton.Position =
-    UDim2.fromOffset(24, 211)
-verifyButton.Size =
-    UDim2.fromOffset(169, 43)
-
--- ==========================================
--- GET KEY BUTTON
--- ==========================================
+verifyButton.Position = UDim2.fromOffset(24, 211)
+verifyButton.Size = UDim2.fromOffset(169, 43)
 
 local getKeyButton = makeButton(
-    window,
-    "GetKeyButton",
-    "GET KEY",
-    YELLOW
+    window, "GetKeyButton", "GET KEY", YELLOW
 )
 
-getKeyButton.Position =
-    UDim2.fromOffset(207, 211)
-getKeyButton.Size =
-    UDim2.fromOffset(169, 43)
+getKeyButton.Position = UDim2.fromOffset(207, 211)
+getKeyButton.Size = UDim2.fromOffset(169, 43)
 
 local footer = label(
     window,
@@ -445,10 +498,71 @@ local footer = label(
     MUTED
 )
 
-footer.Position =
-    UDim2.fromOffset(24, 268)
-footer.Size =
-    UDim2.new(1, -48, 0, 20)
+footer.Position = UDim2.fromOffset(24, 268)
+footer.Size = UDim2.new(1, -48, 0, 20)
+
+-- ==========================================
+-- CLOUDFLARE KEY VERIFICATION
+-- ==========================================
+
+local function verifyWithCloudflare(key)
+    local functions = getRequestFunctions()
+
+    if #functions == 0 then
+        return {
+            valid = false,
+            status = "unsupported_http"
+        }
+    end
+
+    local body = HttpService:JSONEncode({
+        key = key
+    })
+
+    for _, sendRequest in ipairs(functions) do
+        local success, response = pcall(function()
+            return sendRequest({
+                Url = VERIFY_URL,
+                Method = "POST",
+                Headers = {
+                    ["Content-Type"] = "application/json",
+                    ["Accept"] = "application/json"
+                },
+                Body = body
+            })
+        end)
+
+        if success and type(response) == "table" then
+            local responseBody =
+                response.Body or response.body
+
+            if type(responseBody) == "string" then
+                local decoded, result = pcall(function()
+                    return HttpService:JSONDecode(responseBody)
+                end)
+
+                if decoded and type(result) == "table" then
+                    debugLog(
+                        "Verification status:",
+                        result.status
+                    )
+
+                    return {
+                        valid = result.valid == true,
+                        status = result.status or "error",
+                        keyType = result.type,
+                        expiresAt = result.expires_at
+                    }
+                end
+            end
+        end
+    end
+
+    return {
+        valid = false,
+        status = "connection_error"
+    }
+end
 
 -- ==========================================
 -- GITHUB SCRIPT LOADER
@@ -459,67 +573,62 @@ local scriptLoading = false
 
 local function loadGameScript()
     if scriptLoaded or scriptLoading then
-        return false
+        return false, "Already loaded or loading"
     end
 
-    local filename = GAME_SCRIPTS[game.PlaceId]
+    local filename = gameEntry.script
 
-    if not filename then
-        notify(
-            "Unsupported Game",
-            "No script is configured for this game."
-        )
-        return false
+    if type(filename) ~= "string"
+        or not filename:match("^[%w_%-]+%.lua$") then
+        return false, "Invalid script filename"
+    end
+
+    if type(loadstring) ~= "function" then
+        return false, "loadstring not supported"
     end
 
     scriptLoading = true
 
-    notify(
-        "AEVRIX",
-        "Downloading " .. filename .. "..."
-    )
-
     local url = GITHUB_BASE .. filename
 
-    local success, err = pcall(function()
-        if type(loadstring) ~= "function" then
-            error("loadstring is not available")
-        end
+    debugLog("Loading script:", filename)
+    debugLog("Script URL:", url)
 
-        local source = game:HttpGet(url)
-
-        if type(source) ~= "string" or source == "" then
-            error("GitHub returned an empty script")
-        end
-
-        local execute, compileError = loadstring(source)
-
-        if not execute then
-            error(compileError)
-        end
-
-        execute()
+    local fetched, source = pcall(function()
+        return game:HttpGet(url)
     end)
+
+    if not fetched or type(source) ~= "string"
+        or source == "" then
+        scriptLoading = false
+        debugWarn("Script download failed:", source)
+        return false, "Failed to download script"
+    end
+
+    debugLog("Script downloaded:", #source, "bytes")
+
+    local compiled, runner = pcall(function()
+        return loadstring(source)
+    end)
+
+    if not compiled or type(runner) ~= "function" then
+        scriptLoading = false
+        debugWarn("Compilation failed:", runner)
+        return false, "Script compilation failed: "
+            .. tostring(runner)
+    end
+
+    local success, err = pcall(runner)
 
     scriptLoading = false
 
     if not success then
-        warn("[AEVRIX] Script load error:", err)
-
-        notify(
-            "Load Failed",
-            "Unable to run " .. filename
-        )
-
-        return false
+        debugWarn("Execution error:", err)
+        return false, tostring(err)
     end
 
     scriptLoaded = true
-
-    notify(
-        "AEVRIX",
-        "Script started successfully!"
-    )
+    debugLog("Game script executed successfully!")
 
     return true
 end
@@ -539,7 +648,7 @@ local function handleVerificationResult(result)
     if type(result) ~= "table" then
         notify(
             "Verification Failed",
-            "The verification response was invalid."
+            "Invalid server response."
         )
         return
     end
@@ -552,42 +661,52 @@ local function handleVerificationResult(result)
         verifyButton.Active = false
         keyBox.TextEditable = false
 
+        debugLog("Key verified successfully!")
+
         notify(
             "Key Verified",
             "Your Aevrix access key is valid!"
         )
 
-        -- LOAD MATCHING GITHUB SCRIPT
-        task.spawn(function()
-            task.wait(0.5)
+        verifyButton.Text = "LOADING..."
 
-            local loaded = loadGameScript()
+        task.spawn(function()
+            local loaded, loadError = loadGameScript()
+
+            if not gui.Parent then
+                return
+            end
 
             if loaded then
+                verifyButton.Text = "VERIFIED"
+
                 window.Visible = false
                 overlay.Visible = false
+
+                notify(
+                    "AEVRIX",
+                    "Game script started successfully!"
+                )
             else
                 verifyButton.Text = "LOAD FAILED"
+
+                debugWarn("Loading error:", loadError)
+
+                notify(
+                    "Script Load Failed",
+                    tostring(loadError):sub(1, 180)
+                )
             end
         end)
 
     elseif result.status == "expired" then
-        notify(
-            "Key Expired",
-            "Your access key has expired."
-        )
+        notify("Key Expired", "Your key has expired.")
 
     elseif result.status == "revoked" then
-        notify(
-            "Key Revoked",
-            "This key has been revoked."
-        )
+        notify("Key Revoked", "Your key was revoked.")
 
     elseif result.status == "invalid" then
-        notify(
-            "Invalid Key",
-            "Please check your access key."
-        )
+        notify("Invalid Key", "Please check your key.")
 
     elseif result.status == "rate_limited" then
         notify(
@@ -598,7 +717,7 @@ local function handleVerificationResult(result)
     elseif result.status == "unsupported_http" then
         notify(
             "HTTP Unsupported",
-            "This environment does not support HTTP requests."
+            "No compatible HTTP request function."
         )
 
     elseif result.status == "connection_error" then
@@ -610,13 +729,13 @@ local function handleVerificationResult(result)
     else
         notify(
             "Verification Failed",
-            "Unable to verify your access key."
+            "Unable to verify your key."
         )
     end
 end
 
 -- ==========================================
--- VERIFY KEY BUTTON
+-- VERIFY BUTTON
 -- ==========================================
 
 verifyButton.MouseButton1Click:Connect(function()
@@ -630,7 +749,7 @@ verifyButton.MouseButton1Click:Connect(function()
     if enteredKey == "" then
         notify(
             "Missing Key",
-            "Please enter your Aevrix access key."
+            "Please enter your access key."
         )
         return
     end
@@ -652,9 +771,11 @@ verifyButton.MouseButton1Click:Connect(function()
         if success then
             handleVerificationResult(result)
         else
+            debugWarn("Verification error:", result)
+
             notify(
                 "Connection Error",
-                "An unexpected verification error occurred."
+                "An unexpected error occurred."
             )
         end
 
@@ -677,7 +798,7 @@ getKeyButton.MouseButton1Click:Connect(function()
         if success then
             notify(
                 "Link Copied!",
-                "Aevrix key website copied to clipboard."
+                "Aevrix website copied to clipboard."
             )
             return
         end
@@ -690,8 +811,9 @@ getKeyButton.MouseButton1Click:Connect(function()
 end)
 
 -- ==========================================
--- AEVRIX LOADER READY
+-- AEVRIX READY
 -- ==========================================
 
-print("[AEVRIX] Key verifier initialized")
-print("[AEVRIX] Detected game:", gameName)
+debugLog("Dynamic loader initialized!")
+debugLog("Detected game:", gameName)
+debugLog("Ready for key verification.")
