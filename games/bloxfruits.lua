@@ -2160,18 +2160,33 @@ local function BQuest(m)
     end)
 end
 local function BAura()
-    if not B.Enabled or os.clock()<B.NextAura then return end
-    local c=Char() if not c then return end
+    if not S.Running or os.clock()<B.NextAura then return end
+    local c=Char()
+    if not c then return end
     B.NextAura=os.clock()+3
-    if c:FindFirstChild("HasBuso") or c:GetAttribute("HasBuso")==true then BShow("Aura","Enabled") return end
+    local marker=c:FindFirstChild("HasBuso")
+    local enabled=marker and (not marker:IsA("BoolValue") or marker.Value)
+        or c:GetAttribute("HasBuso")==true
+    if enabled then
+        BShow("Aura","Enabled")
+        return
+    end
     if B.AuraBusy then return end
-    B.AuraBusy=true BShow("Aura","Enabling...")
+    B.AuraBusy=true
+    BShow("Aura","Enabling...")
     task.spawn(function()
         local ok=pcall(function() Comm:InvokeServer("Buso") end)
         B.AuraBusy=false
-        if B.Enabled then BShow("Aura",ok and "Checking..." or "Retrying...") end
+        if S.Running then BShow("Aura",ok and "Checking..." or "Retrying...") end
     end)
 end
+
+task.spawn(function()
+    while S.Running do
+        pcall(BAura)
+        task.wait(1)
+    end
+end)
 local function BAttack(m)
     if not RegisterAttack or not RegisterHit or not RegisterAttack:IsA("RemoteEvent") or not RegisterHit:IsA("RemoteEvent") then return false,"Attack remotes unavailable" end
     local _,_,r=Char()
