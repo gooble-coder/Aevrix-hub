@@ -83,8 +83,8 @@ local function ToggleParry()
 end
 
 Window = Fluent:CreateWindow({
-    Title = "Zenith " .. Fluent.Version,
-    SubTitle = "Auto-Parry Engine",
+    Title = "Aevrix Hub " .. Fluent.Version,
+    SubTitle = "Auto-Parry",
     TabWidth = 160,
     Size = UDim2.fromOffset(580, 420),
     Acrylic = false,
@@ -144,11 +144,11 @@ Tabs.Main:CreateKeybind("ToggleKeybind", {
 })
 
 InterfaceManager:SetLibrary(Fluent)
-InterfaceManager:SetFolder("Zenith")
+InterfaceManager:SetFolder("Aevrix Hub")
 InterfaceManager:BuildInterfaceSection(Tabs.Settings)
 
 SaveManager:SetLibrary(Fluent)
-SaveManager:SetFolder("Zenith")
+SaveManager:SetFolder("Aevrix Hub")
 SaveManager:BuildConfigSection(Tabs.Settings)
 SaveManager:LoadAutoloadConfig()
 
