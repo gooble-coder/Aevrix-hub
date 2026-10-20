@@ -19,7 +19,11 @@
     },
     "13772394625": {
       "name": "Blade Ball",
-      "script": "BladeBallV2.lua"
+      "script": "BladeBall.lua"
+    },
+    "16732694052": {
+      "name": "Fisch",
+      "script": "Fisch.lua"
     }
   }
 }
