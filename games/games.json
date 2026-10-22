@@ -28,6 +28,10 @@
     "131716211654599": {
       "name": "Fisch",
       "script": "Fisch.lua"
+    },
+    "142823291": {
+      "name": "Murder Mystery 2",
+      "script": "MM2.lua"
     }
   }
 }
